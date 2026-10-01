@@ -19,14 +19,24 @@ jobs:
           - variant: unpatched
             expo-ui: "57.0.20"
             rn-patch: false
+            expo-patch: false
           # React Native spm.rb with facebook/react-native#57576 applied
           # (patches/react-native@0.86.3.patch).
           - variant: rn-57576-patch
             expo-ui: "57.0.20"
             rn-patch: true
+            expo-patch: false
+          # expo-modules-autolinking installer.rb skipping already-used UUIDs
+          # from the Podfile post_install onwards
+          # (patches/expo-modules-autolinking@57.0.13.patch).
+          - variant: expo-uuid-guard-patch
+            expo-ui: "57.0.20"
+            rn-patch: false
+            expo-patch: true
           - variant: control-expo-ui-57.0.19
             expo-ui: "57.0.19"
             rn-patch: false
+            expo-patch: false
     steps:
       - uses: actions/checkout@v4
 
@@ -46,8 +56,15 @@ jobs:
         run: |
           CHANGED=false
           if [ "${{ matrix.rn-patch }}" != "true" ]; then
-            sed -i '' '/^patchedDependencies:/,/^  react-native@/d' pnpm-workspace.yaml
+            sed -i '' '/^  react-native@0.86.3:/d' pnpm-workspace.yaml
             CHANGED=true
+          fi
+          if [ "${{ matrix.expo-patch }}" != "true" ]; then
+            sed -i '' '/^  expo-modules-autolinking@57.0.13:/d' pnpm-workspace.yaml
+            CHANGED=true
+          fi
+          if ! grep -qE '^  [a-z@].*: patches/' pnpm-workspace.yaml; then
+            sed -i '' '/^patchedDependencies:/d' pnpm-workspace.yaml
           fi
           if [ "${{ matrix.expo-ui }}" != "57.0.20" ]; then
             printf 'overrides:\n  "@expo/ui": %s\n' "${{ matrix.expo-ui }}" >> pnpm-workspace.yaml
@@ -60,6 +77,8 @@ jobs:
             pnpm install --frozen-lockfile
           fi
           echo "spm.rb collision fix present: $(grep -c 'def new_object' apps/mobile/node_modules/react-native/scripts/cocoapods/spm.rb || true)"
+          AUTOLINKING=$(node -p "require('path').dirname(require.resolve('expo-modules-autolinking/package.json', { paths: [require('path').dirname(require.resolve('expo/package.json', { paths: ['apps/mobile'] }))] }))")
+          echo "expo UUID guard present: $(grep -c '_original_run_podfile_post_install_hooks' "$AUTOLINKING/scripts/ios/cocoapods/installer.rb" || true)"
 
       - name: Prebuild
         working-directory: apps/mobile

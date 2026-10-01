@@ -16,3 +16,4 @@ allowBuilds:
   core-js: false
 patchedDependencies:
   react-native@0.86.3: patches/react-native@0.86.3.patch
+  expo-modules-autolinking@57.0.13: patches/expo-modules-autolinking@57.0.13.patch

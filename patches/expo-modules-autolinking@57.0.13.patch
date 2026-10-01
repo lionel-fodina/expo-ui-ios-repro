@@ -1,0 +1,32 @@
+diff --git a/scripts/ios/cocoapods/installer.rb b/scripts/ios/cocoapods/installer.rb
+index 89c0c94..94a97d9 100644
+--- a/scripts/ios/cocoapods/installer.rb
++++ b/scripts/ios/cocoapods/installer.rb
+@@ -34,9 +34,27 @@ module Pod
+ 
+     _original_run_podfile_pre_install_hooks = instance_method(:run_podfile_pre_install_hooks)
+     _original_perform_post_install_actions = instance_method(:perform_post_install_actions)
++    _original_run_podfile_post_install_hooks = instance_method(:run_podfile_post_install_hooks)
+ 
+     public
+ 
++    define_method(:run_podfile_post_install_hooks) do
++      # stabilize_target_uuids resets the sequential UUID counter of Pod::Project
++      # before the Podfile post_install hooks run, so objects created there
++      # (React Native spm_dependency, Expo build phases, ...) can be handed
++      # UUIDs that existing objects already use, including the root
++      # PBXProject. Skip every UUID that is already taken.
++      project = self.pods_project
++      original_generate_uuid = project.method(:generate_uuid)
++      project.define_singleton_method(:generate_uuid) do
++        uuid = original_generate_uuid.call
++        uuid = original_generate_uuid.call while objects_by_uuid.key?(uuid)
++        uuid
++      end
++
++      _original_run_podfile_post_install_hooks.bind(self).()
++    end
++
+     define_method(:perform_post_install_actions) do
+       # Call original implementation first
+       _original_perform_post_install_actions.bind(self).()

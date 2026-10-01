@@ -17,12 +17,13 @@ this app, `@expo/ui` 57.0.20 (pulled in by `expo-router` 57.0.23) adds the few
 objects that land the count on a bad value.
 
 The GitHub Actions workflow builds the app for the iOS simulator in Release
-(Xcode 26.6, CocoaPods 1.16.2) three ways:
+(Xcode 26.6, CocoaPods 1.16.2) four ways:
 
-| Variant | `@expo/ui` | React Native `spm.rb` | Expected |
+| Variant | `@expo/ui` | Patches | Expected |
 |---|---|---|---|
 | `unpatched` | 57.0.20 | 0.86.3 as published | ❌ |
 | `rn-57576-patch` | 57.0.20 | with [facebook/react-native#57576](https://github.com/facebook/react-native/pull/57576) (`patches/`) | ✅ |
+| `expo-uuid-guard-patch` | 57.0.20 | 0.86.3 as published, plus `expo-modules-autolinking` skipping already-used UUIDs from the Podfile `post_install` on (`patches/`) | ✅ |
 | `control-expo-ui-57.0.19` | 57.0.19 | 0.86.3 as published | ✅ (object count shifted) |
 
 Each job uploads the generated Podfile, Podfile.lock, workspace, project files
