@@ -1,0 +1,79 @@
+name: iOS simulator Release build
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: "@expo/ui ${{ matrix.expo-ui }}"
+    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        # 57.0.20 is what the lockfile resolves (transitively, via expo-router
+        # 57.0.23's ^57.0.20). 57.0.19 is the control.
+        expo-ui: ["57.0.20", "57.0.19"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 26.6
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app
+
+      - name: Install CocoaPods 1.16.2 (same as EAS)
+        run: sudo gem install cocoapods -v 1.16.2 && pod --version
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: |
+          if [ "${{ matrix.expo-ui }}" != "57.0.20" ]; then
+            printf 'overrides:\n  "@expo/ui": %s\n' "${{ matrix.expo-ui }}" >> pnpm-workspace.yaml
+            pnpm install --no-frozen-lockfile
+          else
+            pnpm install --frozen-lockfile
+          fi
+          node -e 'console.log("@expo/ui", require(require.resolve("@expo/ui/package.json", { paths: [require.resolve("expo-router/package.json", { paths: ["apps/mobile"] })] })).version)' || true
+
+      - name: Prebuild
+        working-directory: apps/mobile
+        run: npx expo prebuild --platform ios --no-install
+
+      - name: Pod install
+        working-directory: apps/mobile/ios
+        run: pod install
+
+      - name: Build (Release, iOS simulator)
+        working-directory: apps/mobile/ios
+        run: |
+          set -o pipefail
+          WS=$(ls -d *.xcworkspace | head -1)
+          SCHEME=$(basename "$WS" .xcworkspace)
+          xcodebuild -workspace "$WS" -scheme "$SCHEME" -configuration Release \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build CODE_SIGNING_ALLOWED=NO build 2>&1 | tee xcodebuild.log
+
+      - name: Show dependency graph
+        if: always()
+        working-directory: apps/mobile/ios
+        run: |
+          grep -n -A3 -E "Resolve Package Graph|Target dependency graph" xcodebuild.log || true
+          grep -m5 -E "error:" xcodebuild.log || true
+
+      - name: Upload project files and log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-project-expo-ui-${{ matrix.expo-ui }}
+          path: |
+            apps/mobile/ios/xcodebuild.log
+            apps/mobile/ios/Podfile
+            apps/mobile/ios/Podfile.lock
+            apps/mobile/ios/Podfile.properties.json
+            apps/mobile/ios/*.xcworkspace/contents.xcworkspacedata
+            apps/mobile/ios/*.xcodeproj/project.pbxproj
+            apps/mobile/ios/Pods/Pods.xcodeproj/project.pbxproj

@@ -1,0 +1,16 @@
+packages:
+  - "apps/*"
+symlink: true
+injectWorkspacePackages: true
+packageExtensions:
+  "@react-native-community/datetimepicker":
+    dependencies:
+      "@expo/config-plugins": "*"
+allowBuilds:
+  bufferutil: true
+  esbuild: true
+  utf-8-validate: true
+  "@clerk/shared": false
+  "@sentry/cli": true
+  browser-tabs-lock: false
+  core-js: false
