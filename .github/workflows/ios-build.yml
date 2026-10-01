@@ -6,14 +6,27 @@ on:
 
 jobs:
   build:
-    name: "@expo/ui ${{ matrix.expo-ui }}"
+    name: ${{ matrix.variant }}
     runs-on: macos-26
+    env:
+      SENTRY_DISABLE_AUTO_UPLOAD: "true"
     strategy:
       fail-fast: false
       matrix:
-        # 57.0.20 is what the lockfile resolves (transitively, via expo-router
-        # 57.0.23's ^57.0.20). 57.0.19 is the control.
-        expo-ui: ["57.0.20", "57.0.19"]
+        include:
+          # @expo/ui 57.0.20 is what the lockfile resolves (transitively, via
+          # the ^57.0.20 range of expo-router 57.0.23).
+          - variant: unpatched
+            expo-ui: "57.0.20"
+            rn-patch: false
+          # React Native spm.rb with facebook/react-native#57576 applied
+          # (patches/react-native@0.86.3.patch).
+          - variant: rn-57576-patch
+            expo-ui: "57.0.20"
+            rn-patch: true
+          - variant: control-expo-ui-57.0.19
+            expo-ui: "57.0.19"
+            rn-patch: false
     steps:
       - uses: actions/checkout@v4
 
@@ -31,13 +44,22 @@ jobs:
 
       - name: Install dependencies
         run: |
+          CHANGED=false
+          if [ "${{ matrix.rn-patch }}" != "true" ]; then
+            sed -i '' '/^patchedDependencies:/,/^  react-native@/d' pnpm-workspace.yaml
+            CHANGED=true
+          fi
           if [ "${{ matrix.expo-ui }}" != "57.0.20" ]; then
             printf 'overrides:\n  "@expo/ui": %s\n' "${{ matrix.expo-ui }}" >> pnpm-workspace.yaml
+            CHANGED=true
+          fi
+          cat pnpm-workspace.yaml
+          if [ "$CHANGED" = true ]; then
             pnpm install --no-frozen-lockfile
           else
             pnpm install --frozen-lockfile
           fi
-          node -e 'console.log("@expo/ui", require(require.resolve("@expo/ui/package.json", { paths: [require.resolve("expo-router/package.json", { paths: ["apps/mobile"] })] })).version)' || true
+          echo "spm.rb collision fix present: $(grep -c 'def new_object' apps/mobile/node_modules/react-native/scripts/cocoapods/spm.rb || true)"
 
       - name: Prebuild
         working-directory: apps/mobile
@@ -46,6 +68,15 @@ jobs:
       - name: Pod install
         working-directory: apps/mobile/ios
         run: pod install
+
+      - name: Check Pods.xcodeproj root object
+        working-directory: apps/mobile/ios
+        run: |
+          F=Pods/Pods.xcodeproj/project.pbxproj
+          ROOT=$(grep -oE 'rootObject = [0-9A-F]+' "$F" | awk '{print $3}')
+          echo "rootObject: $ROOT"
+          echo "PBXProject objects: $(grep -c 'isa = PBXProject;' "$F")"
+          grep -n -A2 -E "^\s+$ROOT " "$F" | head -6
 
       - name: Build (Release, iOS simulator)
         working-directory: apps/mobile/ios
@@ -61,6 +92,7 @@ jobs:
         if: always()
         working-directory: apps/mobile/ios
         run: |
+          grep -n -E "is damaged|unrecognized selector" xcodebuild.log | head -3 || true
           grep -n -A3 -E "Resolve Package Graph|Target dependency graph" xcodebuild.log || true
           grep -m5 -E "error:" xcodebuild.log || true
 
@@ -68,7 +100,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ios-project-expo-ui-${{ matrix.expo-ui }}
+          name: ios-project-${{ matrix.variant }}
           path: |
             apps/mobile/ios/xcodebuild.log
             apps/mobile/ios/Podfile

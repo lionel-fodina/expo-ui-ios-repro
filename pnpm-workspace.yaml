@@ -14,3 +14,5 @@ allowBuilds:
   "@sentry/cli": true
   browser-tabs-lock: false
   core-js: false
+patchedDependencies:
+  react-native@0.86.3: patches/react-native@0.86.3.patch
